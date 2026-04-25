@@ -18,6 +18,59 @@ AIOS is a single **Next.js** application running locally on a Mac Mini that acts
 - **Hosts the live ops surface for [BMO](https://github.com/mikecutillo/bmo-discord-agent)** and other supervised agents
 - **Syncs structured state to Notion** so mobile access and external tools share the same truth
 
+## Architecture
+
+```mermaid
+graph TB
+    Browser[💻 Browser] --> Shell
+    Mobile[📱 Mobile · Tailscale] --> Shell
+    Alexa[🎙️ Alexa] --> Shell
+    Discord[💬 Discord] --> BMO
+
+    subgraph Shell["AIOS · Next.js 14 on Mac Mini"]
+        UI[React UI · 16+ modules]
+        API[App Router APIs]
+    end
+
+    Shell --> Router
+    Shell --> Workers
+    Shell --> Data
+
+    subgraph Router["🧠 AI Model Router"]
+        Claude[Claude]
+        OpenAI[OpenAI]
+        Gemini[Gemini]
+        OpenRouter[OpenRouter]
+    end
+
+    subgraph Workers["⚙️ Background Workers"]
+        Scrapers[Scrapers]
+        Playwright[Playwright]
+        Schedules[Schedules]
+        BMO[BMO Agent]
+    end
+
+    subgraph Data["💾 Data Layer"]
+        SQLite[(SQLite hot)]
+        JSON[(JSON snapshots)]
+        Notion[(Notion SoT)]
+    end
+
+    Workers --> Router
+    Workers --> Data
+    Workers --> Integrations[🔌 Gmail · Drive · Calendar · MS Graph · Hue · Buffer]
+
+    launchd[🛡️ launchd supervision] -.-> Workers
+```
+
+**Design choices behind the diagram:**
+
+- **Single Next.js shell** — every module is a route inside one app, not a separate service. Auth, navigation, and theming are uniform.
+- **AI Model Router as a separate layer** — modules don't pin to a vendor. The router decides per-request based on cost, latency, and model fit, with waterfall fallback if a provider is down.
+- **Workers, not webhooks** — scrapers and scheduled jobs run on `launchd`, write to SQLite/JSON, and surface results via the same API the UI calls. No bespoke webhook plumbing.
+- **Notion as cross-domain source of truth** — only for state I want to read on a phone or share with non-AIOS tools. Everything ephemeral or hot stays in SQLite.
+- **BMO as a peer agent, not a feature** — it shares the model router and data layer with AIOS but runs as its own process; AIOS gives it an ops surface, not a dependency.
+
 ## Software
 
 | Layer | Tech |
